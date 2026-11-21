@@ -134,8 +134,10 @@ impl Resolver {
             }
         };
         let provider = Provider::by_guid("1c95126e-7eea-49a9-a3fe-a378b03ddb4d").add_callback(cb).build();
-        let session = format!("RuoRuoWatchdog-DNS-{}", std::process::id());
-        match UserTrace::new().named(session).enable(provider).start_and_process() {
+        // 固定的 session 名稱：上一次被強制結束時留下的 session 先停掉，避免累積（Windows 對即時 ETW session 數量有上限）
+        let session = "RuoRuoWatchdog-DNS";
+        let _ = ferrisetw::trace::stop_trace_by_name(session);
+        match UserTrace::new().named(session.to_string()).enable(provider).start_and_process() {
             Ok(trace) => {
                 self.etw_active.store(true, Ordering::SeqCst);
                 // trace 被 drop 就會停止，所以讓它活到程式結束
