@@ -1,6 +1,6 @@
 [package]
 name = "ruoruo-watchdog"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "若若看門狗：監督 Windows 上所有程式的對外連線，解析網域來源，可串接 AI 分析"
 license = "MIT"

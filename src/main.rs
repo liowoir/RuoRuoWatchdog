@@ -36,14 +36,71 @@ fn set_autostart(on: bool) -> bool {
     status.map(|s| s.success()).unwrap_or(false)
 }
 
+const TASK_NAME: &str = "RuoRuoWatchdog";
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// 登入時以「最高權限」啟動（工作排程器）。必須在管理員權限下執行。
+fn set_admin_autostart() -> bool {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let user = format!("{}\\{}", std::env::var("USERDOMAIN").unwrap_or_default(), std::env::var("USERNAME").unwrap_or_default());
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>若若看門狗：登入時以管理員權限在背景監督對外連線</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>{exe}</Command><Arguments>--background</Arguments></Exec></Actions>
+</Task>"#,
+        user = xml_escape(&user),
+        exe = xml_escape(&exe.display().to_string()),
+    );
+    let path = std::env::temp_dir().join("ruoruo-watchdog-task.xml");
+    let mut bytes = vec![0xFF, 0xFE];
+    for u in xml.encode_utf16() {
+        bytes.extend_from_slice(&u.to_le_bytes());
+    }
+    if std::fs::write(&path, bytes).is_err() {
+        return false;
+    }
+    let ok = std::process::Command::new("schtasks")
+        .args(["/Create", "/TN", TASK_NAME, "/XML", &path.display().to_string(), "/F"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let _ = std::fs::remove_file(&path);
+    if ok {
+        set_autostart(false); // 改用排程後，移除一般權限的自動啟動，避免開兩份
+    }
+    ok
+}
+
+fn remove_admin_autostart() -> bool {
+    std::process::Command::new("schtasks").args(["/Delete", "/TN", TASK_NAME, "/F"]).status().map(|s| s.success()).unwrap_or(false)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let has = |f: &str| args.iter().any(|a| a == f);
     if has("--autostart-on") {
         std::process::exit(if set_autostart(true) { 0 } else { 1 });
     }
+    if has("--autostart-admin") {
+        std::process::exit(if set_admin_autostart() { 0 } else { 1 });
+    }
     if has("--autostart-off") {
-        std::process::exit(if set_autostart(false) { 0 } else { 1 });
+        let a = set_autostart(false);
+        let b = remove_admin_autostart();
+        std::process::exit(if a || b { 0 } else { 1 });
     }
 
     let dir = config::data_dir();
