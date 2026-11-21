@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>若若看門狗</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --text: #1f2328; --muted: #6b7280; --line: #e5e2dc;
+  --accent: #b4562f; --high: #c62828; --high-bg: #fde7e7; --med: #a86a00; --med-bg: #fff3d6;
+  --low: #3a6ea5; --low-bg: #e6eef8; --safe: #2e7d32; --safe-bg: #e5f3e6; --chip: #f0eee9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171a; --panel: #1e2125; --text: #e6e6e6; --muted: #9aa0a6; --line: #2e3238;
+    --accent: #e08a5e; --high: #ff8a80; --high-bg: #3a1f1f; --med: #ffcc66; --med-bg: #3a3020;
+    --low: #8ab4f8; --low-bg: #1f2a3a; --safe: #81c995; --safe-bg: #1f3324; --chip: #2a2e33;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "Segoe UI", "Microsoft JhengHei UI", system-ui, sans-serif; }
+header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+header h1 { font-size: 18px; margin: 0; white-space: nowrap; }
+header h1 span { color: var(--accent); }
+.stats { display: flex; gap: 14px; color: var(--muted); font-size: 13px; flex-wrap: wrap; }
+.stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+nav { display: flex; gap: 4px; margin-left: auto; }
+nav button { border: 0; background: none; color: var(--muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+nav button.on { background: var(--chip); color: var(--text); font-weight: 600; }
+main { padding: 16px 20px 40px; }
+.bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+input[type=search], select, input[type=text], input[type=password], input[type=number] { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+input[type=search] { min-width: 240px; }
+.btn { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; font: inherit; }
+.btn.ghost { background: var(--chip); color: var(--text); }
+.btn:disabled { opacity: .5; cursor: default; }
+.ai-status { color: var(--muted); font-size: 13px; }
+.table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; position: sticky; top: 0; background: var(--panel); cursor: pointer; }
+tr:last-child td { border-bottom: 0; }
+td.mono, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; }
+.prog b { display: block; }
+.sub { color: var(--muted); font-size: 12px; word-break: break-all; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.r-high { color: var(--high); background: var(--high-bg); }
+.r-medium { color: var(--med); background: var(--med-bg); }
+.r-low { color: var(--low); background: var(--low-bg); }
+.r-safe { color: var(--safe); background: var(--safe-bg); }
+.chip { display: inline-block; background: var(--chip); border-radius: 4px; padding: 0 6px; margin: 1px 2px 1px 0; font-size: 12px; white-space: nowrap; }
+.none { color: var(--muted); font-style: italic; }
+.prog { max-width: 300px; }
+td:nth-child(5) { max-width: 220px; }
+tr.has-detail td { border-bottom: 0; padding-bottom: 2px; }
+tr.detail td { padding-top: 0; font-size: 13px; }
+.ai-tag { display: inline-block; background: var(--accent); color: #fff; border-radius: 4px; font-size: 11px; font-weight: 700; padding: 0 5px; margin-right: 6px; }
+.ask { border: 1px solid var(--line); background: none; color: var(--accent); border-radius: 4px; cursor: pointer; font-size: 12px; padding: 1px 6px; margin-top: 2px; }
+.ev { display: grid; grid-template-columns: 150px 60px 1fr; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.ev:last-child { border-bottom: 0; }
+.lv-warn, .lv-ai { color: var(--high); font-weight: 600; }
+.lv-new { color: var(--med); font-weight: 600; }
+.lv-info { color: var(--muted); }
+.settings { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; max-width: 720px; display: grid; gap: 14px; }
+.settings label { display: grid; gap: 4px; }
+.settings label.row { display: flex; gap: 8px; align-items: flex-start; }
+.settings label.row input { margin-top: 4px; }
+.settings .hint { color: var(--muted); font-size: 12.5px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.empty { padding: 30px; text-align: center; color: var(--muted); }
+@media (max-width: 700px) { header { padding: 12px 16px; } main { padding: 12px 16px; } nav { margin-left: 0; } input[type=search] { min-width: 0; flex: 1; } .ev { grid-template-columns: 1fr; gap: 2px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>若若<span>看門狗</span></h1>
+  <div class="stats" id="stats"></div>
+  <nav>
+    <button data-tab="live" class="on">即時連線</button>
+    <button data-tab="history">歷史紀錄</button>
+    <button data-tab="events">事件</button>
+    <button data-tab="settings">設定</button>
+  </nav>
+</header>
+<main>
+  <section id="tab-live">
+    <div class="bar">
+      <input type="search" id="q" placeholder="搜尋程式、網域、IP、機構…">
+      <label class="row"><input type="checkbox" id="onlySus"> 只看可疑</label>
+      <label class="row"><input type="checkbox" id="group" checked> 相同的合併</label>
+      <button class="btn" id="aiSus">AI 分析可疑的</button>
+      <button class="btn ghost" id="aiAll">AI 分析全部未分析</button>
+      <span class="ai-status" id="aiStatus"></span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>風險</th><th>程式</th><th>遠端</th><th>網域來源</th><th>網路擁有者</th><th>簽章</th><th>標記</th></tr></thead>
+      <tbody id="liveBody"></tbody>
+    </table></div>
+  </section>
+
+  <section id="tab-history" hidden>
+    <div class="bar">
+      <input type="search" id="hq" placeholder="搜尋歷史…">
+      <select id="hRisk"><option value="">全部風險</option><option value="high">高</option><option value="medium">中</option><option value="unanalyzed">AI 尚未分析</option></select>
+      <span class="ai-status" id="hCount"></span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>風險</th><th>程式</th><th>遠端</th><th>網域來源</th><th>網路擁有者</th><th>第一次 / 最後一次</th><th>次數</th></tr></thead>
+      <tbody id="histBody"></tbody>
+    </table></div>
+  </section>
+
+  <section id="tab-events" hidden>
+    <div class="table-wrap" id="events"></div>
+  </section>
+
+  <section id="tab-settings" hidden>
+    <div class="settings">
+      <label>AI 分析方式
+        <select id="provider">
+          <option value="claude-cli">Claude 訂閱（使用已登入的 Claude Code：claude -p）</option>
+          <option value="codex-cli">ChatGPT 訂閱（使用已登入的 Codex CLI：codex exec）</option>
+          <option value="anthropic-api">Anthropic API 金鑰</option>
+          <option value="none">不使用 AI</option>
+        </select>
+        <span class="hint">訂閱方式不需要金鑰，會用你電腦上已經登入的 CLI。</span>
+      </label>
+      <label>API 模型 <input type="text" id="model"></label>
+      <label>API 金鑰 <input type="password" id="apikey" placeholder="留空 = 不更改（也可用環境變數 ANTHROPIC_API_KEY）" autocomplete="off">
+        <span class="hint" id="keyHint"></span></label>
+      <label class="row"><input type="checkbox" id="auto"> 定時自動分析新出現的可疑連線</label>
+      <label>自動分析間隔（分鐘） <input type="number" id="autoMins" min="5"></label>
+      <label class="row"><input type="checkbox" id="redact"> 傳給 AI 前把使用者資料夾換成 %USERPROFILE%</label>
+      <label>掃描間隔（秒） <input type="number" id="interval" min="2"></label>
+      <label class="row"><input type="checkbox" id="tls"> 查不到網域時，讀 HTTPS 對方的憑證來辨識（只做 TLS 握手，不送資料；重新啟動後生效）</label>
+      <div class="row"><button class="btn" id="save">儲存設定</button><span class="ai-status" id="saveMsg"></span></div>
+      <hr style="border:0;border-top:1px solid var(--line);width:100%">
+      <div>
+        <b>網路擁有者資料庫（ASN）</b>
+        <p class="hint">從 iptoasn.com 下載公開資料庫（約 11 MB），之後在本機離線查詢，不會把你的連線 IP 傳出去。</p>
+        <div class="row"><button class="btn ghost" id="asnBtn">下載 / 更新 ASN 資料庫</button><span class="ai-status" id="asnMsg"></span></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Watchdog': '1'}, body: JSON.stringify(body || {})}).then(r => r.json());
+const RISK = {high: '高', medium: '中', low: '低', safe: '安全'};
+const RANK = {high: 0, medium: 1, low: 2, safe: 3};
+let tab = 'live', live = [], hist = [];
+
+function riskOf(r) { return r.ai_risk || r.rule_risk || 'low'; }
+function pill(r) {
+  const k = riskOf(r);
+  const src = r.ai_risk ? 'AI' : '規則';
+  return `<span class="pill r-${k}" title="依${src}判定">${RISK[k] || k}</span>`;
+}
+function sig(r) {
+  const s = r.sig_status;
+  if (s === 'valid') return `<span class="sub">${esc(r.signer)}</span>`;
+  if (s === 'system') return '<span class="sub">Windows 系統檔</span>';
+  if (s === 'unsigned') return '<span class="pill r-medium">未簽章</span>';
+  if (s === 'invalid') return '<span class="pill r-high">簽章無效</span>';
+  return '<span class="none">無法讀取</span>';
+}
+function domains(r) {
+  const d = Array.isArray(r.domains) ? r.domains : (r.domains ? r.domains.split(', ') : []);
+  const SRC = {dns: ['程式查詢', '這個程式自己向 DNS 查的網域（最準）'], 'dns-cache': ['DNS 快取', 'Windows DNS 快取裡對應這個 IP 的網域'], cert: ['憑證', '對方伺服器 HTTPS 憑證上登記的網域']};
+  const src = SRC[r.domain_src];
+  let h = d.map(x => `<span class="chip mono">${esc(x)}</span>`).join('');
+  if (h && src) h += `<span class="sub" title="${src[1]}"> · ${src[0]}</span>`;
+  if (r.ptr) h += `<div class="sub mono" title="反查 PTR">↩ ${esc(r.ptr)}</div>`;
+  return h || '<span class="none" title="DNS 查不到、也讀不到憑證。瀏覽器開了安全 DNS 時常見，請看網路擁有者欄">查不到</span>';
+}
+function owner(r) {
+  if (!r.org && !r.asn) return '<span class="none">—</span>';
+  return `${esc(r.org)}<div class="sub">${esc(r.asn)} ${esc(r.country)}</div>`;
+}
+function prog(r) {
+  const svc = r.services && r.services.length ? `<div class="sub">服務：${esc(r.services.slice(0,4).join(', '))}</div>` : '';
+  return `<div class="prog"><b>${esc(r.proc_name)}</b><div class="sub">${esc(r.exe)}</div>${svc}</div>`;
+}
+function askBtn(r) {
+  return r.ai_reason ? '' : `<button class="ask" data-id="${r.endpoint_id ?? r.id}">問 AI</button>`;
+}
+function aiRow(r, cols) {
+  return r.ai_reason ? `<tr class="detail"><td></td><td colspan="${cols - 1}"><span class="ai-tag">AI</span>${esc(r.ai_reason)}</td></tr>` : '';
+}
+function match(r, q) {
+  if (!q) return true;
+  const hay = [r.proc_name, r.exe, r.remote_ip, r.remote_port, r.domains, r.ptr, r.org, r.asn, r.country, r.signer, r.flags, r.ai_reason].flat().join(' ').toLowerCase();
+  return q.toLowerCase().split(/\s+/).every(w => hay.includes(w));
+}
+
+function renderLive() {
+  const q = $('#q').value.trim(), sus = $('#onlySus').checked, grp = $('#group').checked;
+  let rows = live.filter(r => match(r, q) && (!sus || ['high','medium'].includes(riskOf(r))));
+  if (grp) {
+    const m = new Map();
+    for (const r of rows) {
+      const k = r.endpoint_id;
+      if (m.has(k)) m.get(k).count++; else m.set(k, {...r, count: 1});
+    }
+    rows = [...m.values()];
+  }
+  rows.sort((a, b) => (RANK[riskOf(a)] - RANK[riskOf(b)]) || a.proc_name.localeCompare(b.proc_name));
+  $('#liveBody').innerHTML = rows.map(r => `<tr class="${r.ai_reason ? 'has-detail' : ''}">
+    <td>${pill(r)}</td><td>${prog(r)}</td>
+    <td class="mono">${esc(r.remote_ip)}:${r.remote_port}<div class="sub">${esc(r.direction)}${r.count > 1 ? ' ×' + r.count : ''}</div></td>
+    <td>${domains(r)}</td><td>${owner(r)}</td><td>${sig(r)}</td>
+    <td>${(r.flags || []).map(f => `<span class="chip">${esc(f)}</span>`).join('')}${askBtn(r)}</td></tr>${aiRow(r, 7)}`).join('')
+    || '<tr><td colspan="7" class="empty">沒有符合的連線</td></tr>';
+}
+
+function renderHist() {
+  const q = $('#hq').value.trim(), f = $('#hRisk').value;
+  const rows = hist.filter(r => match(r, q) && (!f || (f === 'unanalyzed' ? !r.ai_risk : riskOf(r) === f)));
+  $('#hCount').textContent = `${rows.length} 筆`;
+  $('#histBody').innerHTML = rows.slice(0, 800).map(r => `<tr class="${r.ai_reason ? 'has-detail' : ''}">
+    <td>${pill(r)}</td><td>${prog(r)}</td>
+    <td class="mono">${esc(r.remote_ip)}:${r.remote_port}<div class="sub">${esc(r.direction)}</div></td>
+    <td>${domains(r)}</td><td>${owner(r)}</td>
+    <td class="sub">${esc(r.first_seen)}<br>${esc(r.last_seen)}</td><td>${r.hits}${askBtn(r) ? '<br>' + askBtn(r) : ''}</td></tr>${aiRow(r, 7)}`).join('')
+    || '<tr><td colspan="7" class="empty">沒有紀錄</td></tr>';
+}
+
+async function loadLive() {
+  const d = await fetch('/api/live').then(r => r.json());
+  live = d.rows; const s = d.stats;
+  $('#stats').innerHTML = `對外連線 <b>${s.external}</b> · 程式 <b>${s.programs}</b> · 查不到網域 <b>${s.unresolved}</b> · 全部 TCP <b>${s.total_tcp}</b> · 更新 ${esc(s.last_scan)} · ${s.dns_mode === 'etw' ? '管理員模式' : '<span title="以管理員執行可精確看到每個程式查詢的網域">一般模式</span>'}${s.asn_loaded ? '' : ' · <span title="到設定頁下載">ASN 未載入</span>'}`;
+  $('#aiStatus').textContent = 'AI：' + d.ai_status;
+  if (tab === 'live') renderLive();
+}
+async function loadHist() { hist = (await fetch('/api/history').then(r => r.json())).rows; renderHist(); }
+async function loadEvents() {
+  const ev = (await fetch('/api/events').then(r => r.json())).events;
+  const LV = {warn: '警告', ai: 'AI', new: '新程式', info: '資訊'};
+  $('#events').innerHTML = ev.map(e => `<div class="ev"><span class="sub mono">${esc(e.ts)}</span><span class="lv-${e.level}">${LV[e.level] || esc(e.level)}</span><span>${esc(e.message)}</span></div>`).join('') || '<div class="empty">還沒有事件</div>';
+}
+async function loadSettings() {
+  const d = await fetch('/api/config').then(r => r.json()); const c = d.config;
+  $('#provider').value = c.ai.provider; $('#model').value = c.ai.model; $('#auto').checked = c.ai.auto_analyze;
+  $('#autoMins').value = c.ai.auto_interval_mins; $('#redact').checked = c.ai.redact_paths; $('#interval').value = c.interval_secs; $('#tls').checked = c.tls_probe;
+  $('#keyHint').textContent = d.has_key ? '已設定金鑰' : '尚未設定金鑰';
+  window._cfg = c;
+}
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('main > section').forEach(s => s.hidden = s.id !== 'tab-' + tab);
+  ({live: loadLive, history: loadHist, events: loadEvents, settings: loadSettings})[tab]();
+});
+['#q', '#onlySus', '#group'].forEach(s => $(s).addEventListener('input', renderLive));
+['#hq', '#hRisk'].forEach(s => $(s).addEventListener('input', renderHist));
+document.addEventListener('click', async e => {
+  const b = e.target.closest('.ask'); if (!b) return;
+  b.disabled = true; b.textContent = '分析中…';
+  await post('/api/analyze', {ids: [Number(b.dataset.id)]});
+});
+$('#aiSus').onclick = () => post('/api/analyze', {only_suspicious: true}).then(loadLive);
+$('#aiAll').onclick = () => post('/api/analyze', {}).then(loadLive);
+$('#save').onclick = async () => {
+  const c = structuredClone(window._cfg);
+  c.ai.provider = $('#provider').value; c.ai.model = $('#model').value.trim(); c.ai.api_key = $('#apikey').value.trim();
+  c.ai.auto_analyze = $('#auto').checked; c.ai.auto_interval_mins = Number($('#autoMins').value) || 30;
+  c.ai.redact_paths = $('#redact').checked; c.interval_secs = Number($('#interval').value) || 5; c.tls_probe = $('#tls').checked;
+  const r = await post('/api/config', c);
+  $('#saveMsg').textContent = r.ok ? '已儲存' : (r.error || '儲存失敗'); $('#apikey').value = ''; loadSettings();
+};
+$('#asnBtn').onclick = async () => { await post('/api/asn/download'); $('#asnMsg').textContent = '下載中，完成後會記在「事件」'; };
+
+loadLive();
+setInterval(() => { if (tab === 'live') loadLive(); else if (tab === 'events') loadEvents(); }, 3000);
+</script>
+</body>
+</html>

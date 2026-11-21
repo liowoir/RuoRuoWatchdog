@@ -1,0 +1,8 @@
+/target
+*.db
+*.db-wal
+*.db-shm
+config.json
+ip2asn*
+*.download
+codex-last-message.txt
