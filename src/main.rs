@@ -28,7 +28,7 @@ fn set_autostart(on: bool) -> bool {
     let exe = std::env::current_exe().unwrap_or_default();
     let status = if on {
         std::process::Command::new("reg")
-            .args(["add", RUN_KEY, "/v", RUN_NAME, "/t", "REG_SZ", "/d", &format!("\"{}\"", exe.display()), "/f"])
+            .args(["add", RUN_KEY, "/v", RUN_NAME, "/t", "REG_SZ", "/d", &format!("\"{}\" --background", exe.display()), "/f"])
             .status()
     } else {
         std::process::Command::new("reg").args(["delete", RUN_KEY, "/v", RUN_NAME, "/f"]).status()
