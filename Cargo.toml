@@ -1,6 +1,6 @@
 [package]
 name = "ruoruo-watchdog"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "若若看門狗：監督 Windows 上所有程式的對外連線，解析網域來源，可串接 AI 分析"
 license = "MIT"
@@ -9,7 +9,6 @@ repository = "https://github.com/liowoir/RuoRuoWatchdog"
 [dependencies]
 anyhow = "1.0.104"
 chrono = "0.4.45"
-dns-lookup = "4.0.2"
 ferrisetw = "1.2.0"
 flate2 = "1.1.11"
 rusqlite = { version = "0.43.0", features = ["bundled"] }
@@ -18,7 +17,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tiny_http = "0.12.0"
 ureq = { version = "3.5.2", features = ["json"] }
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Security_WinTrust", "Win32_Security_Cryptography", "Win32_System_Services", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_Security_Cryptography_Catalog", "Win32_Security_Cryptography_Sip"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Security_WinTrust", "Win32_Security_Cryptography", "Win32_System_Services", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_Security_Cryptography_Catalog", "Win32_Security_Cryptography_Sip", "Win32_NetworkManagement_Dns"] }
 wmi = "0.18.4"
 x509-parser = "0.18.1"
 

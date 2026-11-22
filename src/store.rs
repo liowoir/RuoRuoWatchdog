@@ -32,6 +32,7 @@ pub struct Endpoint {
     pub ai_reason: Option<String>,
     pub ai_at: Option<String>,
     pub domain_src: String,
+    pub proto: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -43,6 +44,7 @@ pub struct Event {
 }
 
 pub struct Upsert<'a> {
+    pub proto: &'a str,
     pub exe: &'a str,
     pub proc_name: &'a str,
     pub remote_ip: &'a str,
@@ -64,22 +66,39 @@ fn now() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+const ENDPOINTS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS endpoints (
+    id INTEGER PRIMARY KEY, exe TEXT NOT NULL, proc_name TEXT, remote_ip TEXT NOT NULL, remote_port INTEGER NOT NULL,
+    direction TEXT, domains TEXT, ptr TEXT, asn TEXT, org TEXT, country TEXT, signer TEXT, sig_status TEXT,
+    flags TEXT, rule_risk TEXT, first_seen TEXT, last_seen TEXT, hits INTEGER DEFAULT 1,
+    ai_risk TEXT, ai_reason TEXT, ai_at TEXT, domain_src TEXT, proto TEXT NOT NULL DEFAULT 'TCP',
+    UNIQUE(exe, proto, remote_ip, remote_port));";
+
 impl Store {
     pub fn open(dir: &Path) -> anyhow::Result<Store> {
         let db = Connection::open(dir.join("watchdog.db"))?;
-        db.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             CREATE TABLE IF NOT EXISTS endpoints (
-               id INTEGER PRIMARY KEY, exe TEXT NOT NULL, proc_name TEXT, remote_ip TEXT NOT NULL, remote_port INTEGER NOT NULL,
-               direction TEXT, domains TEXT, ptr TEXT, asn TEXT, org TEXT, country TEXT, signer TEXT, sig_status TEXT,
-               flags TEXT, rule_risk TEXT, first_seen TEXT, last_seen TEXT, hits INTEGER DEFAULT 1,
-               ai_risk TEXT, ai_reason TEXT, ai_at TEXT,
-               UNIQUE(exe, remote_ip, remote_port));
+        db.execute_batch("PRAGMA journal_mode=WAL;")?;
+        // 舊版（0.1.x）的 endpoints 沒有 proto 欄位，而且唯一鍵不含協定，要重建資料表才能同時記 TCP 與 UDP
+        let table_exists: bool = db.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='endpoints'", [], |r| r.get::<_, i64>(0)).map(|n| n > 0).unwrap_or(false);
+        if table_exists {
+            let _ = db.execute("ALTER TABLE endpoints ADD COLUMN domain_src TEXT", []);
+            let has_proto: bool = db.query_row("SELECT COUNT(*) FROM pragma_table_info('endpoints') WHERE name='proto'", [], |r| r.get::<_, i64>(0)).map(|n| n > 0).unwrap_or(false);
+            if !has_proto {
+                db.execute_batch(&format!(
+                    "BEGIN;
+                     ALTER TABLE endpoints RENAME TO endpoints_old;
+                     {ENDPOINTS_SCHEMA}
+                     INSERT INTO endpoints (id, exe, proc_name, remote_ip, remote_port, direction, domains, ptr, asn, org, country, signer, sig_status, flags, rule_risk, first_seen, last_seen, hits, ai_risk, ai_reason, ai_at, domain_src, proto)
+                       SELECT id, exe, proc_name, remote_ip, remote_port, direction, domains, ptr, asn, org, country, signer, sig_status, flags, rule_risk, first_seen, last_seen, hits, ai_risk, ai_reason, ai_at, domain_src, 'TCP' FROM endpoints_old;
+                     DROP TABLE endpoints_old;
+                     COMMIT;"
+                ))?;
+            }
+        }
+        db.execute_batch(&format!(
+            "{ENDPOINTS_SCHEMA}
              CREATE TABLE IF NOT EXISTS programs (exe TEXT PRIMARY KEY, proc_name TEXT, first_seen TEXT, signer TEXT, sig_status TEXT);
-             CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, ts TEXT, level TEXT, message TEXT);",
-        )?;
-        // 0.1 之後新增的欄位（舊資料庫補上，已存在就忽略錯誤）
-        let _ = db.execute("ALTER TABLE endpoints ADD COLUMN domain_src TEXT", []);
+             CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, ts TEXT, level TEXT, message TEXT);"
+        ))?;
         Ok(Store { db })
     }
 
@@ -100,7 +119,7 @@ impl Store {
     pub fn upsert(&self, u: &Upsert) -> (i64, bool) {
         let existing: Option<i64> = self
             .db
-            .query_row("SELECT id FROM endpoints WHERE exe=?1 AND remote_ip=?2 AND remote_port=?3", params![u.exe, u.remote_ip, u.remote_port], |r| r.get(0))
+            .query_row("SELECT id FROM endpoints WHERE exe=?1 AND proto=?2 AND remote_ip=?3 AND remote_port=?4", params![u.exe, u.proto, u.remote_ip, u.remote_port], |r| r.get(0))
             .optional()
             .unwrap_or(None);
         let t = now();
@@ -123,9 +142,9 @@ impl Store {
             }
             None => {
                 let _ = self.db.execute(
-                    "INSERT INTO endpoints (exe, proc_name, remote_ip, remote_port, direction, domains, ptr, asn, org, country, signer, sig_status, flags, rule_risk, first_seen, last_seen, domain_src)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?15,?16)",
-                    params![u.exe, u.proc_name, u.remote_ip, u.remote_port, u.direction, u.domains, u.ptr, u.asn, u.org, u.country, u.signer, u.sig_status, u.flags, u.rule_risk, t, u.domain_src],
+                    "INSERT INTO endpoints (exe, proc_name, remote_ip, remote_port, direction, domains, ptr, asn, org, country, signer, sig_status, flags, rule_risk, first_seen, last_seen, domain_src, proto)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?15,?16,?17)",
+                    params![u.exe, u.proc_name, u.remote_ip, u.remote_port, u.direction, u.domains, u.ptr, u.asn, u.org, u.country, u.signer, u.sig_status, u.flags, u.rule_risk, t, u.domain_src, u.proto],
                 );
                 (self.db.last_insert_rowid(), true)
             }
@@ -133,9 +152,9 @@ impl Store {
     }
 
     /// 同一次掃描內重複的連線：不加 hits，只取 id
-    pub fn upsert_peek(&self, exe: &str, ip: &str, port: u16) -> i64 {
+    pub fn upsert_peek(&self, proto: &str, exe: &str, ip: &str, port: u16) -> i64 {
         self.db
-            .query_row("SELECT id FROM endpoints WHERE exe=?1 AND remote_ip=?2 AND remote_port=?3", params![exe, ip, port], |r| r.get(0))
+            .query_row("SELECT id FROM endpoints WHERE exe=?1 AND proto=?2 AND remote_ip=?3 AND remote_port=?4", params![exe, proto, ip, port], |r| r.get(0))
             .unwrap_or(0)
     }
 
@@ -177,10 +196,11 @@ impl Store {
             ai_reason: r.get(19)?,
             ai_at: r.get(20)?,
             domain_src: r.get::<_, Option<String>>(21)?.unwrap_or_default(),
+            proto: r.get::<_, Option<String>>(22)?.unwrap_or_else(|| "TCP".into()),
         })
     }
 
-    const COLS: &'static str = "id, exe, proc_name, remote_ip, remote_port, direction, domains, ptr, asn, org, country, signer, sig_status, flags, rule_risk, first_seen, last_seen, hits, ai_risk, ai_reason, ai_at, domain_src";
+    const COLS: &'static str = "id, exe, proc_name, remote_ip, remote_port, direction, domains, ptr, asn, org, country, signer, sig_status, flags, rule_risk, first_seen, last_seen, hits, ai_risk, ai_reason, ai_at, domain_src, proto";
 
     pub fn history(&self, limit: i64) -> Vec<Endpoint> {
         let sql = format!("SELECT {} FROM endpoints ORDER BY last_seen DESC LIMIT ?1", Self::COLS);

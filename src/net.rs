@@ -2,8 +2,9 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use windows::Win32::NetworkManagement::IpHelper::{
-    GetExtendedTcpTable, MIB_TCP6ROW_OWNER_PID, MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_OWNER_PID,
-    MIB_TCPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
+    GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCP6ROW_OWNER_PID, MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_OWNER_PID,
+    MIB_TCPTABLE_OWNER_PID, MIB_UDP6ROW_OWNER_PID, MIB_UDP6TABLE_OWNER_PID, MIB_UDPROW_OWNER_PID,
+    MIB_UDPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL, UDP_TABLE_OWNER_PID,
 };
 use windows::Win32::Networking::WinSock::{AF_INET, AF_INET6};
 
@@ -103,6 +104,63 @@ pub fn tcp_connections() -> Vec<Conn> {
                     state: state_name(r.dwState),
                     pid: r.dwOwningPid,
                 });
+            }
+        }
+    }
+    out
+}
+
+/// 一個開著的 UDP 通訊埠（UDP 沒有連線概念，系統表只告訴我們「哪個程式綁定了哪個本機埠」）
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct UdpSock {
+    pub local_ip: IpAddr,
+    pub local_port: u16,
+    pub pid: u32,
+}
+
+fn fetch_udp(af: u32) -> Vec<u8> {
+    let mut size: u32 = 0;
+    unsafe {
+        let _ = GetExtendedUdpTable(None, &mut size, false, af, UDP_TABLE_OWNER_PID, 0);
+    }
+    loop {
+        let mut buf = vec![0u8; size as usize + 4096];
+        let mut sz = buf.len() as u32;
+        let r = unsafe { GetExtendedUdpTable(Some(buf.as_mut_ptr() as *mut _), &mut sz, false, af, UDP_TABLE_OWNER_PID, 0) };
+        if r == 0 {
+            return buf;
+        }
+        if r == 122 {
+            size = sz;
+            continue;
+        }
+        return Vec::new();
+    }
+}
+
+pub fn udp_sockets() -> Vec<UdpSock> {
+    let mut out = Vec::new();
+    let buf = fetch_udp(AF_INET.0 as u32);
+    if !buf.is_empty() {
+        unsafe {
+            let t = &*(buf.as_ptr() as *const MIB_UDPTABLE_OWNER_PID);
+            let rows = std::slice::from_raw_parts(t.table.as_ptr() as *const MIB_UDPROW_OWNER_PID, t.dwNumEntries as usize);
+            for r in rows {
+                out.push(UdpSock {
+                    local_ip: IpAddr::V4(Ipv4Addr::from(u32::from_be(r.dwLocalAddr))),
+                    local_port: port(r.dwLocalPort),
+                    pid: r.dwOwningPid,
+                });
+            }
+        }
+    }
+    let buf = fetch_udp(AF_INET6.0 as u32);
+    if !buf.is_empty() {
+        unsafe {
+            let t = &*(buf.as_ptr() as *const MIB_UDP6TABLE_OWNER_PID);
+            let rows = std::slice::from_raw_parts(t.table.as_ptr() as *const MIB_UDP6ROW_OWNER_PID, t.dwNumEntries as usize);
+            for r in rows {
+                out.push(UdpSock { local_ip: IpAddr::V6(Ipv6Addr::from(r.ucLocalAddr)), local_port: port(r.dwLocalPort), pid: r.dwOwningPid });
             }
         }
     }

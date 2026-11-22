@@ -64,6 +64,11 @@ pub fn serve(app: Arc<App>, server: Server, port: u16) {
                 let ai = app.ai_status.lock().unwrap().clone();
                 send_json(req, json!({"rows": rows, "stats": stats, "ai_status": ai}), 200);
             }
+            (Method::Get, "/api/udp-ports") => {
+                let rows = app.udp_ports.lock().unwrap().clone();
+                let mode = app.live.lock().unwrap().1.udp_mode.clone();
+                send_json(req, json!({"rows": rows, "udp_mode": mode}), 200);
+            }
             (Method::Get, "/api/history") => {
                 let rows = app.store.lock().unwrap().history(2000);
                 send_json(req, json!({"rows": rows}), 200);

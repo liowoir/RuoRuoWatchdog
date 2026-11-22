@@ -62,7 +62,7 @@ pub fn snapshot() -> HashMap<u32, ProcInfo> {
     map
 }
 
-fn image_path(pid: u32) -> Option<String> {
+pub fn image_path(pid: u32) -> Option<String> {
     if pid == 0 || pid == 4 {
         return None;
     }

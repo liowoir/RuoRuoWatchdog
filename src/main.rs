@@ -10,6 +10,7 @@ mod net;
 mod procinfo;
 mod store;
 mod tlsname;
+mod udp;
 mod web;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -132,17 +133,20 @@ fn main() {
         cfg: Mutex::new(cfg),
         store: Mutex::new(store),
         resolver: dns::Resolver::new(tls_probe),
+        udp: udp::UdpFlows::default(),
         asn: RwLock::new(None),
         live: Mutex::new(Default::default()),
+        udp_ports: Mutex::new(Vec::new()),
         ai_status: Mutex::new("尚未執行".into()),
     });
     let etw = app.resolver.start_etw();
+    let udp_etw = app.udp.start_etw();
     app.store.lock().unwrap().event(
         "info",
-        if etw {
-            "若若看門狗啟動（管理員模式：可精確看到每個程式查詢的網域）"
-        } else {
-            "若若看門狗啟動（一般模式：網域來源靠 DNS 快取、憑證、反查；以管理員執行可更精確）"
+        match (etw, udp_etw) {
+            (true, true) => "若若看門狗啟動（管理員模式：看得到每個程式查詢的網域，也看得到 UDP 往來的外部位址）",
+            (true, false) => "若若看門狗啟動（DNS 監聽已啟用，但 UDP 流量監聽啟動失敗，UDP 只能列出開著的通訊埠）",
+            _ => "若若看門狗啟動（一般模式：網域來源靠 DNS 快取、憑證、反查；UDP 只能列出開著的通訊埠；以管理員執行可更精確）",
         },
     );
 

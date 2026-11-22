@@ -240,7 +240,7 @@ impl Resolver {
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 continue;
             };
-            let name = dns_lookup::lookup_addr(&ip).ok().filter(|n| n.parse::<IpAddr>().is_err());
+            let name = ptr_query(&ip);
             let mut g = self.inner.lock().unwrap();
             g.ptr.insert(ip, name);
             g.ptr_pending.remove(&ip);
@@ -259,6 +259,60 @@ impl Resolver {
             g.cert.insert((ip, port), names);
             g.cert_pending.remove(&(ip, port));
         }
+    }
+}
+
+fn reverse_name(ip: &IpAddr) -> String {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            format!("{}.{}.{}.{}.in-addr.arpa", o[3], o[2], o[1], o[0])
+        }
+        IpAddr::V6(v6) => {
+            let mut s = String::new();
+            for b in v6.octets().iter().rev() {
+                s.push_str(&format!("{:x}.{:x}.", b & 0x0f, b >> 4));
+            }
+            s + "ip6.arpa"
+        }
+    }
+}
+
+/// 只做 DNS PTR 查詢。刻意不用 getnameinfo：它在 DNS 查不到時會改送 NetBIOS（UDP 137）節點狀態查詢，
+/// 等於對每一個遠端 IP 多送一個封包出去，這個工具自己不該製造這種流量。
+fn ptr_query(ip: &IpAddr) -> Option<String> {
+    use windows::Win32::NetworkManagement::Dns::{
+        DnsFree, DnsFreeRecordList, DnsQuery_W, DNS_QUERY_NO_MULTICAST, DNS_QUERY_NO_NETBT, DNS_RECORDA, DNS_TYPE_PTR,
+    };
+    use windows::core::PCWSTR;
+
+    let name: Vec<u16> = reverse_name(ip).encode_utf16().chain(std::iter::once(0)).collect();
+    let mut result: *mut DNS_RECORDA = std::ptr::null_mut();
+    unsafe {
+        let err = DnsQuery_W(PCWSTR(name.as_ptr()), DNS_TYPE_PTR, DNS_QUERY_NO_NETBT | DNS_QUERY_NO_MULTICAST, None, &mut result, None);
+        if err.0 != 0 || result.is_null() {
+            return None;
+        }
+        let mut found = None;
+        let mut cur = result;
+        while !cur.is_null() {
+            let rec = &*cur;
+            if rec.wType == DNS_TYPE_PTR.0 {
+                // DNS_RECORDA 與 DNS_RECORDW 的版面相同，字串是寬字元
+                let host = rec.Data.PTR.pNameHost.0 as *const u16;
+                if !host.is_null() {
+                    let mut len = 0;
+                    while *host.add(len) != 0 {
+                        len += 1;
+                    }
+                    found = Some(String::from_utf16_lossy(std::slice::from_raw_parts(host, len)).trim_end_matches('.').to_lowercase());
+                    break;
+                }
+            }
+            cur = rec.pNext;
+        }
+        DnsFree(Some(result as *const std::ffi::c_void), DnsFreeRecordList);
+        found.filter(|n| !n.is_empty())
     }
 }
 

@@ -68,6 +68,9 @@ tr.detail td { padding-top: 0; font-size: 13px; }
 .settings .hint { color: var(--muted); font-size: 12.5px; }
 .row { display: flex; gap: 8px; align-items: center; }
 .empty { padding: 30px; text-align: center; color: var(--muted); }
+.hint { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+.proto { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 0 5px; margin-right: 4px; background: var(--chip); color: var(--muted); }
+.proto.udp { background: var(--low-bg); color: var(--low); }
 @media (max-width: 700px) { header { padding: 12px 16px; } main { padding: 12px 16px; } nav { margin-left: 0; } input[type=search] { min-width: 0; flex: 1; } .ev { grid-template-columns: 1fr; gap: 2px; } }
 </style>
 </head>
@@ -77,6 +80,7 @@ tr.detail td { padding-top: 0; font-size: 13px; }
   <div class="stats" id="stats"></div>
   <nav>
     <button data-tab="live" class="on">即時連線</button>
+    <button data-tab="udp">UDP 通訊埠</button>
     <button data-tab="history">歷史紀錄</button>
     <button data-tab="events">事件</button>
     <button data-tab="settings">設定</button>
@@ -86,6 +90,7 @@ tr.detail td { padding-top: 0; font-size: 13px; }
   <section id="tab-live">
     <div class="bar">
       <input type="search" id="q" placeholder="搜尋程式、網域、IP、機構…">
+      <select id="proto"><option value="">TCP + UDP</option><option value="TCP">只看 TCP</option><option value="UDP">只看 UDP</option></select>
       <label class="row"><input type="checkbox" id="onlySus"> 只看可疑</label>
       <label class="row"><input type="checkbox" id="group" checked> 相同的合併</label>
       <button class="btn" id="aiSus">AI 分析可疑的</button>
@@ -98,9 +103,19 @@ tr.detail td { padding-top: 0; font-size: 13px; }
     </table></div>
   </section>
 
+  <section id="tab-udp" hidden>
+    <p class="hint" id="udpHint"></p>
+    <div class="bar"><input type="search" id="uq" placeholder="搜尋程式、埠號…"><span class="ai-status" id="uCount"></span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>程式</th><th>本機埠</th><th>開放範圍</th><th>簽章</th><th>目前往來的外部位址</th></tr></thead>
+      <tbody id="udpBody"></tbody>
+    </table></div>
+  </section>
+
   <section id="tab-history" hidden>
     <div class="bar">
       <input type="search" id="hq" placeholder="搜尋歷史…">
+      <select id="hProto"><option value="">TCP + UDP</option><option value="TCP">只看 TCP</option><option value="UDP">只看 UDP</option></select>
       <select id="hRisk"><option value="">全部風險</option><option value="high">高</option><option value="medium">中</option><option value="unanalyzed">AI 尚未分析</option></select>
       <span class="ai-status" id="hCount"></span>
     </div>
@@ -194,9 +209,21 @@ function match(r, q) {
   return q.toLowerCase().split(/\s+/).every(w => hay.includes(w));
 }
 
+function bytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+function remote(r, extra) {
+  const udp = r.proto === 'UDP';
+  const b = udp ? `<div class="sub" title="這段期間送出 / 收到的資料量">↑ ${bytes(r.sent_bytes)} ↓ ${bytes(r.recv_bytes)}</div>` : '';
+  return `<span class="proto ${udp ? 'udp' : ''}">${udp ? 'UDP' : 'TCP'}</span>${esc(r.remote_ip)}:${r.remote_port}<div class="sub">${esc(r.direction)}${extra || ''}</div>${b}`;
+}
+
 function renderLive() {
-  const q = $('#q').value.trim(), sus = $('#onlySus').checked, grp = $('#group').checked;
-  let rows = live.filter(r => match(r, q) && (!sus || ['high','medium'].includes(riskOf(r))));
+  const q = $('#q').value.trim(), sus = $('#onlySus').checked, grp = $('#group').checked, pr = $('#proto').value;
+  let rows = live.filter(r => match(r, q) && (!pr || r.proto === pr) && (!sus || ['high','medium'].includes(riskOf(r))));
   if (grp) {
     const m = new Map();
     for (const r of rows) {
@@ -208,19 +235,19 @@ function renderLive() {
   rows.sort((a, b) => (RANK[riskOf(a)] - RANK[riskOf(b)]) || a.proc_name.localeCompare(b.proc_name));
   $('#liveBody').innerHTML = rows.map(r => `<tr class="${r.ai_reason ? 'has-detail' : ''}">
     <td>${pill(r)}</td><td>${prog(r)}</td>
-    <td class="mono">${esc(r.remote_ip)}:${r.remote_port}<div class="sub">${esc(r.direction)}${r.count > 1 ? ' ×' + r.count : ''}</div></td>
+    <td class="mono">${remote(r, r.count > 1 ? ' ×' + r.count : '')}</td>
     <td>${domains(r)}</td><td>${owner(r)}</td><td>${sig(r)}</td>
     <td>${(r.flags || []).map(f => `<span class="chip">${esc(f)}</span>`).join('')}${askBtn(r)}</td></tr>${aiRow(r, 7)}`).join('')
     || '<tr><td colspan="7" class="empty">沒有符合的連線</td></tr>';
 }
 
 function renderHist() {
-  const q = $('#hq').value.trim(), f = $('#hRisk').value;
-  const rows = hist.filter(r => match(r, q) && (!f || (f === 'unanalyzed' ? !r.ai_risk : riskOf(r) === f)));
+  const q = $('#hq').value.trim(), f = $('#hRisk').value, pr = $('#hProto').value;
+  const rows = hist.filter(r => match(r, q) && (!pr || r.proto === pr) && (!f || (f === 'unanalyzed' ? !r.ai_risk : riskOf(r) === f)));
   $('#hCount').textContent = `${rows.length} 筆`;
   $('#histBody').innerHTML = rows.slice(0, 800).map(r => `<tr class="${r.ai_reason ? 'has-detail' : ''}">
     <td>${pill(r)}</td><td>${prog(r)}</td>
-    <td class="mono">${esc(r.remote_ip)}:${r.remote_port}<div class="sub">${esc(r.direction)}</div></td>
+    <td class="mono">${remote(r)}</td>
     <td>${domains(r)}</td><td>${owner(r)}</td>
     <td class="sub">${esc(r.first_seen)}<br>${esc(r.last_seen)}</td><td>${r.hits}${askBtn(r) ? '<br>' + askBtn(r) : ''}</td></tr>${aiRow(r, 7)}`).join('')
     || '<tr><td colspan="7" class="empty">沒有紀錄</td></tr>';
@@ -229,9 +256,30 @@ function renderHist() {
 async function loadLive() {
   const d = await fetch('/api/live').then(r => r.json());
   live = d.rows; const s = d.stats;
-  $('#stats').innerHTML = `對外連線 <b>${s.external}</b> · 程式 <b>${s.programs}</b> · 查不到網域 <b>${s.unresolved}</b> · 全部 TCP <b>${s.total_tcp}</b> · 更新 ${esc(s.last_scan)} · ${s.dns_mode === 'etw' ? '管理員模式' : '<span title="以管理員執行可精確看到每個程式查詢的網域">一般模式</span>'}${s.asn_loaded ? '' : ' · <span title="到設定頁下載">ASN 未載入</span>'}`;
+  const udp = s.udp_mode === 'etw' ? `UDP 往來 <b>${s.udp_flows}</b>` : `<span title="一般模式只能列出開著的 UDP 埠；以管理員執行才看得到 UDP 往來的外部位址">UDP 埠 <b>${s.udp_ports}</b></span>`;
+  $('#stats').innerHTML = `TCP 對外 <b>${s.external}</b> · ${udp} · 程式 <b>${s.programs}</b> · 查不到網域 <b>${s.unresolved}</b> · 更新 ${esc(s.last_scan)} · ${s.dns_mode === 'etw' ? '管理員模式' : '<span title="以管理員執行可精確看到每個程式查詢的網域與 UDP 往來">一般模式</span>'}${s.asn_loaded ? '' : ' · <span title="到設定頁下載">ASN 未載入</span>'}`;
   $('#aiStatus').textContent = 'AI：' + d.ai_status;
   if (tab === 'live') renderLive();
+}
+let udpPorts = [];
+function renderUdp() {
+  const q = $('#uq').value.trim().toLowerCase();
+  const rows = udpPorts.filter(r => !q || [r.proc_name, r.exe, r.local_port, r.scope, r.signer].join(' ').toLowerCase().includes(q));
+  $('#uCount').textContent = `${rows.length} 個埠`;
+  $('#udpBody').innerHTML = rows.map(r => {
+    const wide = r.scope === '所有網路介面';
+    return `<tr><td>${prog(r)}</td><td class="mono">${r.local_port}</td>
+      <td><span class="pill ${wide ? 'r-medium' : 'r-low'}" title="${wide ? '綁定在所有網路介面，區網或外部都能送封包過來' : ''}">${esc(r.scope)}</span></td>
+      <td>${sig(r)}</td><td>${r.flows ? '<b>' + r.flows + '</b> 個（見「即時連線」）' : '<span class="none">目前沒有</span>'}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="empty">沒有 UDP 埠</td></tr>';
+}
+async function loadUdp() {
+  const d = await fetch('/api/udp-ports').then(r => r.json());
+  udpPorts = d.rows;
+  $('#udpHint').textContent = d.udp_mode === 'etw'
+    ? 'UDP 沒有「連線」的概念。這裡列出每個程式開著的 UDP 埠；它們目前正在和哪些外部位址收發封包，在「即時連線」選「只看 UDP」。'
+    : '目前是一般模式：只能知道哪些程式開了 UDP 埠，看不到它們跟誰往來。以管理員執行（--autostart-admin）就會在「即時連線」看到 UDP 往來的外部位址。';
+  renderUdp();
 }
 async function loadHist() { hist = (await fetch('/api/history').then(r => r.json())).rows; renderHist(); }
 async function loadEvents() {
@@ -251,10 +299,11 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   tab = b.dataset.tab;
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('main > section').forEach(s => s.hidden = s.id !== 'tab-' + tab);
-  ({live: loadLive, history: loadHist, events: loadEvents, settings: loadSettings})[tab]();
+  ({live: loadLive, udp: loadUdp, history: loadHist, events: loadEvents, settings: loadSettings})[tab]();
 });
-['#q', '#onlySus', '#group'].forEach(s => $(s).addEventListener('input', renderLive));
-['#hq', '#hRisk'].forEach(s => $(s).addEventListener('input', renderHist));
+['#q', '#onlySus', '#group', '#proto'].forEach(s => $(s).addEventListener('input', renderLive));
+['#hq', '#hRisk', '#hProto'].forEach(s => $(s).addEventListener('input', renderHist));
+$('#uq').addEventListener('input', renderUdp);
 document.addEventListener('click', async e => {
   const b = e.target.closest('.ask'); if (!b) return;
   b.disabled = true; b.textContent = '分析中…';
@@ -273,7 +322,7 @@ $('#save').onclick = async () => {
 $('#asnBtn').onclick = async () => { await post('/api/asn/download'); $('#asnMsg').textContent = '下載中，完成後會記在「事件」'; };
 
 loadLive();
-setInterval(() => { if (tab === 'live') loadLive(); else if (tab === 'events') loadEvents(); }, 3000);
+setInterval(() => { if (tab === 'live') loadLive(); else if (tab === 'udp') loadUdp(); else if (tab === 'events') loadEvents(); }, 3000);
 </script>
 </body>
 </html>
